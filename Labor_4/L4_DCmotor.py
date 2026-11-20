@@ -22,12 +22,12 @@ IN2 = 18    # IN2 on Motor screw terminal
 ENA = 12    # ENA - PWM for speed control (Enable A)
 
 # settings
-VOLTAGE = 6 # *** CHANGE ME *** voltage for DC motor [V] between 0 und 12 V (Voltage from power supply is always 12 V)
+VOLTAGE = 10 # *** CHANGE ME *** voltage for DC motor [V] between 0 und 12 V (Voltage from power supply is always 12 V)
 DIRECTION = 1  # *** CHANGE ME *** movement direction (0 or 1) of slide on linear guideway
 
 # auxiliary parameters
 MAX_VOLTAGE = 12  # supply voltage of motor driver is 12 V (which equals the max. rated voltage of the DC motor)
-PWM_FREQUENCY = 1000  # Hz
+PWM_FREQUENCY = 1000  # Hz$
 PWM_DUTYCYCLE = round(VOLTAGE / MAX_VOLTAGE * 100, 3)  # PWM_DUTYCYCLE from 0 (OFF) to 100 percent (FULLY ON)
 
 

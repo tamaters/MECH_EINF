@@ -1,6 +1,6 @@
 """-----------------------------------------------------
 ¦    File name: L4_Stepmotor_Measurements.py            s¦
-¦    Version: 1.1                                       ¦
+¦    Version: 1.2                                       ¦
 ¦    Authors:                                           ¦
 ¦       Jonas Josi                                      ¦
 ¦       Matthias Lang                                   ¦
@@ -16,37 +16,35 @@ import lgpio
 import time
 
 # ----------- global constant -----------
-# assign motor driver interface to GPIO's of Raspberry Pi
-IN1 = 17    # Coil A+
-IN2 = 18    # Coil A-
-IN3 = 27    # Coil B+
-IN4 = 22    # Coil B-
+# assign motor driver interface to GPIO's of Raspberry Pi (DRV8825)
+DIR = 17    # Direction
+STEP = 18   # Step pulse
+SLP = 27    # Sleep (active HIGH to enable)
+RST = 22    # Reset (active HIGH to enable)
 
 
 # settings of stepper motor and cycles/movement
-STEP_TIME = 0.002  # *** CHANGE ME *** time in [s] between two consecutive steps of stepper motor
-MOVEMENT_STOP_TIME = 0  # *** CHANGE ME ***  Pause [s] between two consecutive movements (up/down) of slide on linear guideway
+STEP_TIME = 0.0005  # *** CHANGE ME *** time in [s] between two consecutive steps of stepper motor
+MOVEMENT_STOP_TIME = 3  # *** CHANGE ME ***  Pause [s] between two consecutive movements (up/down) of slide on linear guideway
 MOVEMENT_STEP_NUMBER = 2000  # *** CHANGE ME ***  Number of steps to drive the stepper motor per movement of the slide on the linear guideway
 CYCLE_START_DIRECTION = 1  # *** CHANGE ME ***  Direction (0 or 1) of first movement of slide on linear guideway
 CYCLE_NUMBER = 3  # *** CHANGE ME ***  Number of cycles (movement of slide on linear guideway in one direction, followed by movement in the opposite direction)
 
 
 # ----------- function definition -----------
-def set_motor_coils(coil_1, coil_2, coil_3, coil_4):
+def set_motor_coils(direction, step_state):
     """
-    Set state (HIGH/LOW) of all 4 coils of stepper motor by controlling the output pins of the motor driver (IN1, IN2, IN3, IN4).
+    Set direction (DIR pin) and pulse the STEP pin of the DRV8825 motor driver.
 
     Parameters
     ----------
-    coil_1 : int or GPIO.LOW or GPIO.HIGH
-    coil_2 : int or GPIO.LOW or GPIO.HIGH
-    coil_3 : int or GPIO.LOW or GPIO.HIGH
-    coil_4 : int or GPIO.LOW or GPIO.HIGH
+    direction : int or GPIO.LOW or GPIO.HIGH
+        Direction of rotation (0 or 1), written to the DIR pin.
+    step_state : int or GPIO.LOW or GPIO.HIGH
+        State of the STEP pin (0 or 1). Toggling this HIGH then LOW advances the motor one step.
     """
-    lgpio.gpio_write(gpio0, IN1,  coil_1)
-    lgpio.gpio_write(gpio0, IN2,  coil_2)
-    lgpio.gpio_write(gpio0, IN3,  coil_3)
-    lgpio.gpio_write(gpio0, IN4,  coil_4)
+    lgpio.gpio_write(gpio0, DIR,  direction)
+    lgpio.gpio_write(gpio0, STEP, step_state)
 
 
 def busy_sleep(secs):
@@ -69,12 +67,12 @@ def busy_sleep(secs):
 
 def stop_motor():
     """
-    Set state of all 4 coils of stepper motor to LOW by controlling the output pins of the motor driver (IN1, IN2, IN3, IN4).
-    Then disable all motor driver output pins (IN1, IN2, IN3, IN4).
+    Set STEP pin LOW and put the DRV8825 driver to sleep (SLP LOW) to de-energize the motor coils.
     """
 
-    # turn off all coils
-    set_motor_coils(0, 0, 0, 0)
+    # stop stepping and disable driver outputs
+    lgpio.gpio_write(gpio0, STEP, 0)
+    lgpio.gpio_write(gpio0, SLP, 0)
     busy_sleep(STEP_TIME)
 
     print("\nMotor stopped")
@@ -86,16 +84,17 @@ if __name__ == "__main__":
     gpio0 = lgpio.gpiochip_open(0) # open GPIO chip 0
 
     # Configure GPIO pins as outputs
-    lgpio.gpio_claim_output(gpio0, IN1)
-    lgpio.gpio_claim_output(gpio0, IN2)
-    lgpio.gpio_claim_output(gpio0, IN3)
-    lgpio.gpio_claim_output(gpio0, IN4)
+    lgpio.gpio_claim_output(gpio0, DIR)
+    lgpio.gpio_claim_output(gpio0, STEP)
+    lgpio.gpio_claim_output(gpio0, SLP)
+    lgpio.gpio_claim_output(gpio0, RST)
 
     # initialize all pins to safe stat
-    lgpio.gpio_write(gpio0, IN1, 0)
-    lgpio.gpio_write(gpio0, IN2, 0)
-    lgpio.gpio_write(gpio0, IN3, 0)
-    lgpio.gpio_write(gpio0, IN4, 0)
+    lgpio.gpio_write(gpio0, DIR, 0)
+    lgpio.gpio_write(gpio0, STEP, 0)
+    lgpio.gpio_write(gpio0, RST, 1)  # RST HIGH = not reset
+    lgpio.gpio_write(gpio0, SLP, 1)  # SLP HIGH = not sleeping (driver enabled)
+    time.sleep(0.001)
 
 
     """ start measurement """
@@ -107,30 +106,38 @@ if __name__ == "__main__":
         while cycle < CYCLE_NUMBER:
             if direction == 0:
                 while step < MOVEMENT_STEP_NUMBER:
-                    # activate coil 2 & coil 4
-                    set_motor_coils(0, 1, 0, 1)
+                    # pulse STEP pin (1st step of this pass)
+                    set_motor_coils(direction, 1)
                     busy_sleep(STEP_TIME)
-                    
+                    set_motor_coils(direction, 0)
+                    busy_sleep(STEP_TIME)
+
                     step += 1
 
                     if step >= MOVEMENT_STEP_NUMBER:
                         break  # leave while-loop
-                    # activate coil 2 & coil 3
-                    set_motor_coils(0, 1, 1, 0)
+                    # pulse STEP pin (2nd step of this pass)
+                    set_motor_coils(direction, 1)
                     busy_sleep(STEP_TIME)
-                    step += 1
-
-                    if step >= MOVEMENT_STEP_NUMBER:
-                        break  # leave while-loop
-                    # activate coil 1 & coil 3
-                    set_motor_coils(1, 0, 1, 0)
+                    set_motor_coils(direction, 0)
                     busy_sleep(STEP_TIME)
                     step += 1
 
                     if step >= MOVEMENT_STEP_NUMBER:
                         break  # leave while-loop
-                    # activate coil 1 & coil 4
-                    set_motor_coils(1, 0, 0, 1)
+                    # pulse STEP pin (3rd step of this pass)
+                    set_motor_coils(direction, 1)
+                    busy_sleep(STEP_TIME)
+                    set_motor_coils(direction, 0)
+                    busy_sleep(STEP_TIME)
+                    step += 1
+
+                    if step >= MOVEMENT_STEP_NUMBER:
+                        break  # leave while-loop
+                    # pulse STEP pin (4th step of this pass)
+                    set_motor_coils(direction, 1)
+                    busy_sleep(STEP_TIME)
+                    set_motor_coils(direction, 0)
                     busy_sleep(STEP_TIME)
                     step += 1
 
@@ -138,29 +145,37 @@ if __name__ == "__main__":
                         break  # leave while-loop
             elif direction == 1:
                 while step < MOVEMENT_STEP_NUMBER:
-                    # activate coil 1 & coil 4
-                    set_motor_coils(1, 0, 0, 1)
+                    # pulse STEP pin (1st step of this pass)
+                    set_motor_coils(direction, 1)
+                    busy_sleep(STEP_TIME)
+                    set_motor_coils(direction, 0)
                     busy_sleep(STEP_TIME)
                     step += 1
 
                     if step >= MOVEMENT_STEP_NUMBER:
                         break  # leave while-loop
-                    # activate coil 1 & coil 3
-                    set_motor_coils(1, 0, 1, 0)
+                    # pulse STEP pin (2nd step of this pass)
+                    set_motor_coils(direction, 1)
+                    busy_sleep(STEP_TIME)
+                    set_motor_coils(direction, 0)
                     busy_sleep(STEP_TIME)
                     step += 1
 
                     if step >= MOVEMENT_STEP_NUMBER:
                         break  # leave while-loop
-                    # activate coil 2 & coil 3
-                    set_motor_coils(0, 1, 1, 0)
+                    # pulse STEP pin (3rd step of this pass)
+                    set_motor_coils(direction, 1)
+                    busy_sleep(STEP_TIME)
+                    set_motor_coils(direction, 0)
                     busy_sleep(STEP_TIME)
                     step += 1
 
                     if step >= MOVEMENT_STEP_NUMBER:
                         break  # leave while-loop
-                    # activate coil 2 & coil 4
-                    set_motor_coils(0, 1, 0, 1)
+                    # pulse STEP pin (4th step of this pass)
+                    set_motor_coils(direction, 1)
+                    busy_sleep(STEP_TIME)
+                    set_motor_coils(direction, 0)
                     busy_sleep(STEP_TIME)
                     step += 1
 
@@ -175,10 +190,10 @@ if __name__ == "__main__":
 
         stop_motor()
         # Free GPIO pins
-        lgpio.gpio_free(gpio0, IN1)
-        lgpio.gpio_free(gpio0, IN2)
-        lgpio.gpio_free(gpio0, IN3)
-        lgpio.gpio_free(gpio0, IN4) # Close the GPIO chip connection
+        lgpio.gpio_free(gpio0, DIR)
+        lgpio.gpio_free(gpio0, STEP)
+        lgpio.gpio_free(gpio0, SLP)
+        lgpio.gpio_free(gpio0, RST) # Close the GPIO chip connection
         print("Exit Python")
         exit(0)  # exit python with exit code 0
 
@@ -186,9 +201,9 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         stop_motor()
         # Free GPIO pins
-        lgpio.gpio_free(gpio0, IN1)
-        lgpio.gpio_free(gpio0, IN2)
-        lgpio.gpio_free(gpio0, IN3)
-        lgpio.gpio_free(gpio0, IN4)  # Close the GPIO chip connection
+        lgpio.gpio_free(gpio0, DIR)
+        lgpio.gpio_free(gpio0, STEP)
+        lgpio.gpio_free(gpio0, SLP)
+        lgpio.gpio_free(gpio0, RST)  # Close the GPIO chip connection
         print("Exit Python")
         exit(0)  # exit python with exit code 0
